@@ -143,78 +143,83 @@ typedef enum {wrapmode, fencemode, windowmode} mode_type;
 #define MACRO_PRIORITY	3
 #define PREFIX_PRIORITY 4
 
-typedef long int NODETYPES;
+/*
+NODETYPE encoding
 
-#ifdef OBJECTS
-#define NT_METHOD   ((NODETYPES)0100000000)
-#define NT_OBJ	    ((NODETYPES)040000000)
-#endif
-#define NT_LOCAL	((NODETYPES)020000000)
-#define NT_STACK	((NODETYPES)010000000)
-#define NT_CONT		((NODETYPES)04000000)
-#define NT_INFIX	((NODETYPES)02000000)
-#define NT_LINE		((NODETYPES)01000000)
-#define NT_TAILFORM	((NODETYPES)0400000)
-#define NT_MACRO	((NODETYPES)0200000)
-#define NT_TREE		((NODETYPES)0100000)
-#define NT_EMPTY	((NODETYPES)040000)
-#define NT_AGGR		((NODETYPES)020000)
-#define NT_LIST		((NODETYPES)010000)
-#define NT_RUNP		((NODETYPES)004000)
-#define NT_ARRAY	((NODETYPES)002000)
-#define NT_WORD		((NODETYPES)001000)
-#define NT_NUMBER	((NODETYPES)000400)
-#define NT_FLOAT	((NODETYPES)000200)
-#define NT_PRIM		((NODETYPES)000100)
-#define NT_VBAR		((NODETYPES)000040)
-#define NT_STRING	((NODETYPES)000020)
-#define NT_BACKSL	((NODETYPES)000010)
-#define NT_PUNCT	((NODETYPES)000004)
-#define NT_COLON	((NODETYPES)000002)
-#define NT_CASEOBJ	((NODETYPES)000001)
+0000    00 000 000  PUNBOUND
 
-#define	PNIL		((NODETYPES)(NT_EMPTY|NT_AGGR|NT_LIST))
+0020    00 010 00x  NT_WORD_PUNCT           0|NT_COLON
+0024    00 010 10x  NT_WORD_NUMBER          0|NT_FLOAT
+0030    00 011 00x  NT_WORD_CASEOBJ          |NT_CASEOBJ
+0034    00 011 1xx  NT_WORD_STRING          0|-|NT_BACKSL|NT_VBAR
+               100      NT_WORD_STRING
+               101      -
+               110      NT_BACKSL
+               111      NT_VBAR
+0040    00 100 0xx  NT_PRIM                 0|NT_MACRO|NT_TAILFORM|NT_INFIX
+0044    00 100 1xx  NT_OBJ
+0100    01 000 0xx  NT_LIST                  |NT_CONT|NT_STACK
+0200    10 000 0xx  NT_AGGR                  |NT_ARRAY
+0300    11 000 xxx  NT_AGGR_LIST            0|NT_EMPTY|NT_LINE|NT_RUNP
+                                             |NT_TREE|NT_LOCAL|NT_METHOD
+0377    11 111 111  NT_FREE
+
+*/
+
+typedef unsigned char NODETYPES;
+
+#define NTFREE		((NODETYPES)0377)
 #define PUNBOUND	((NODETYPES)0)
-#define CONS		((NODETYPES)(NT_AGGR|NT_LIST))
-#define STRING		((NODETYPES)(NT_WORD|NT_STRING))
-#define INT		((NODETYPES)(NT_WORD|NT_NUMBER))
-#define FLOATT		((NODETYPES)(NT_WORD|NT_NUMBER|NT_FLOAT))
-#define PRIM		((NODETYPES)(NT_PRIM))
-#define MACRO		((NODETYPES)(NT_PRIM|NT_MACRO))
-#define TAILFORM	((NODETYPES)(NT_PRIM|NT_TAILFORM))
-#define CASEOBJ		((NODETYPES)(NT_WORD|NT_CASEOBJ))
-#define INFIX		((NODETYPES)(NT_PRIM|NT_INFIX))
-#define TREE		((NODETYPES)(NT_AGGR|NT_LIST|NT_TREE))
-#define RUN_PARSE	((NODETYPES)(NT_AGGR|NT_LIST|NT_RUNP))
-#define QUOTE		((NODETYPES)(NT_WORD|NT_PUNCT))
-#define COLON		((NODETYPES)(NT_WORD|NT_PUNCT|NT_COLON))
-#define BACKSLASH_STRING ((NODETYPES)(NT_WORD|NT_STRING|NT_BACKSL))
-#define VBAR_STRING	((NODETYPES)(NT_WORD|NT_STRING|NT_BACKSL|NT_VBAR))
-#define ARRAY		((NODETYPES)(NT_AGGR|NT_ARRAY))
-#define LINE		((NODETYPES)(NT_LINE|NT_LIST|NT_AGGR))
-#define CONT		((NODETYPES)(NT_CONT|NT_LIST))
-#define STACK		((NODETYPES)(NT_STACK|NT_LIST))
-#define NTFREE		((NODETYPES)(-1))
-#define LOCALSAVE	((NODETYPES)(CONS|NT_LOCAL))
+#define NT_WORD         ((NODETYPES)0020)
+#define QUOTE		((NODETYPES)0020)
+#define COLON		((NODETYPES)0021)
+#define INT		((NODETYPES)0024)
+#define FLOATT		((NODETYPES)0025)
+#define CASEOBJ		((NODETYPES)0030)
+#define STRING		((NODETYPES)0034)
+#define BACKSLASH_STRING ((NODETYPES)0036)
+#define VBAR_STRING	((NODETYPES)0037)
+#define PRIM		((NODETYPES)0040)
+#define MACRO		((NODETYPES)0041)
+#define TAILFORM	((NODETYPES)0042)
+#define INFIX		((NODETYPES)0043)
+#define NT_LIST         ((NODETYPES)0100)
+#define CONT		((NODETYPES)0101)
+#define STACK		((NODETYPES)0102)
+#define NT_AGGR         ((NODETYPES)0200)
+#define ARRAY		((NODETYPES)0201)
+#define CONS		((NODETYPES)0300)
+#define LOCALSAVE	((NODETYPES)0301)
+#define	PNIL		((NODETYPES)0302)
+#define LINE		((NODETYPES)0303)
+#define RUN_PARSE	((NODETYPES)0304)
+#define TREE		((NODETYPES)0305)
 #ifdef OBJECTS
-#define OBJECT      ((NODETYPES)(NT_OBJ))
-#define METHOD	    ((NODETYPES)(NT_AGGR|NT_LIST|NT_METHOD))
+#define METHOD	        ((NODETYPES)0306)
+#define OBJECT          ((NODETYPES)0044)
 #endif
+
+#define is_list_type(nt)        ((nt) & NT_LIST)
+#define is_number_type(nt)      (((nt) & 00376) == INT)
+#define is_prim_type(nt)        (((nt) & 00374) == PRIM)
+#define is_word_type(nt)        ((nt) & NT_WORD)
+#define backslashed_type(nt)    (((nt) & 00376) == BACKSLASH_STRING)
 
 #define aggregate(nd)	(nodetype(nd) & NT_AGGR)
 #define is_cont(nd)	(nodetype(nd) == CONT)
-#define is_list(nd)	(nodetype(nd) & NT_LIST)
-#define is_tree(nd)	(nodetype(nd) & NT_TREE)
-#define is_string(nd)	(nodetype(nd) & NT_STRING)
-#define is_number(nd)	(nodetype(nd) & NT_NUMBER)
-#define is_prim(nd)	(nodetype(nd) & NT_PRIM)
-#define is_word(nd)	(nodetype(nd) & NT_WORD)
-#define runparsed(nd)	(nodetype(nd) & NT_RUNP)
-#define backslashed(nd)	(nodetype(nd) & NT_BACKSL)
+#define is_list(nd)	is_list_type(nodetype(nd))
+#define is_tree(nd)	(nodetype(nd) == TREE)
+#define is_string(nd)	((nodetype(nd) & 00374) == STRING)
+#define is_number(nd)	is_number_type(nodetype(nd))
+#define is_prim(nd)	is_prim_type(nodetype(nd))
+#define is_word(nd)	is_word_type(nodetype(nd))
+#define runparsed(nd)	(nodetype(nd) == RUN_PARSE)
+#define backslashed(nd)	backslashed_type(nodetype(nd))
 #define is_tailform(nd)	(nodetype(nd) == TAILFORM)
+#define is_local(nd)    (nodetype(nd) == LOCALSAVE)
 #ifdef OBJECTS
-#define is_object(nd)   (nodetype(nd) == NT_OBJ)
-#define is_method(nd)   (nodetype(nd) == NT_METHOD)
+#define is_object(nd)   (nodetype(nd) == OBJECT)
+#define is_method(nd)   (nodetype(nd) == METHOD)
 #endif
 
 typedef enum { FATAL, OUT_OF_MEM, STACK_OVERFLOW, TURTLE_OUT_OF_BOUNDS,
@@ -284,9 +289,10 @@ struct string_block {
 
 typedef struct logo_node {
     NODETYPES node_type;
-    int my_gen; /* Nodes's Generation */ /*GC*/
-    int gen_age; /* How many times to GC at this generation */
-    long int mark_gc;	/* when marked */
+    unsigned char my_gen; /* Nodes's Generation */ /*GC*/
+    unsigned char gen_age; /* How many times to GC at this generation */
+    unsigned char rsvd;
+    int mark_gc;	/* when marked */
     struct logo_node *next; /* Link together nodes of the same age */ /*GC*/
     struct logo_node *oldyoung_next;
     union {
@@ -424,15 +430,7 @@ typedef enum { RUN, STOP, OUTPUT, THROWING, MACRO_RETURN } CTRLTYPE;
 struct segment {
 	struct segment *next;
 	FIXNUM size;
-#ifdef mac
 	struct logo_node nodes[1];
-#else
-#ifdef __RZTC__
-	struct logo_node nodes[1];
-#else
-	struct logo_node nodes[1];
-#endif
-#endif
 };
 
 #define NOT_THROWING            (stopping_flag != THROWING)

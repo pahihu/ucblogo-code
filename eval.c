@@ -257,7 +257,7 @@ NODE *flatten(NODE *a) {
  */
 void reset_args(NODE *old_stack) {
     for (; var_stack != old_stack; pop(var_stack)) {
-	if (nodetype(var_stack) & NT_LOCAL)
+	if (is_local(var_stack))
 	    setflag__caseobj(car(var_stack), IS_LOCAL_VALUE);
 	else
 	    clearflag__caseobj(car(var_stack), IS_LOCAL_VALUE);

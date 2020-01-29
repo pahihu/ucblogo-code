@@ -88,7 +88,7 @@ NODE *oldyoungs = NIL;
 BOOLEAN oldyoungs_dirty = FALSE;
 #define DEBUGSTREAM     (dribblestream ? dribblestream : stdout)
 
-long int current_gc = 0;
+/*long*/ int current_gc = 0;
 
 long int gc_stack_malloced = 0;
 
@@ -115,9 +115,15 @@ long int num_examined, num_visited;
 
 NODE *lsetsegsz(NODE *args) {
     NODE *num = pos_int_arg(args);
+    FIXNUM val;
 
-    if (NOT_THROWING)
-	seg_size = getint(num);
+    if (NOT_THROWING) {
+        val = getint(num);
+        if (1024 <= val && val <= (16*1024*1024)) {
+	    seg_size = val;
+        } else
+            err_logo(BAD_DATA_UNREC, num);
+    }
     return UNBOUND;
 }
 

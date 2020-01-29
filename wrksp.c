@@ -1253,7 +1253,7 @@ NODE *po_helper(NODE *arg, int just_titles) {
 		err_logo(DK_HOW_UNREC, car(proclst));
 		break;
 	    }
-	} else if (nodetype(tvar) & NT_PRIM) {
+	} else if (is_prim(tvar)) {
 	    err_logo(IS_PRIM, car(proclst));
 	    break;
 	} else {

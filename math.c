@@ -634,7 +634,7 @@ int compare_node(NODE *n1, NODE *n2, BOOLEAN ignorecase) {
     nt1 = nodetype(n1);
     nt2 = nodetype(n2);
 
-    if (!(nt1 & NT_WORD) || !(nt2 & NT_WORD)) return -9999;
+    if (!is_word_type(nt1) || !is_word_type(nt2)) return -9999;
 
     if (nt1==QUOTE && is_list(node__quote(n1))) return -9999;
     if (nt2==QUOTE && is_list(node__quote(n2))) return -9999;
@@ -642,10 +642,10 @@ int compare_node(NODE *n1, NODE *n2, BOOLEAN ignorecase) {
     if (nt1 == CASEOBJ && nt2 == CASEOBJ && ignorecase &&
 	 (object__caseobj(n1) == object__caseobj(n2))) return 0;
 
-    if ((nt1 & NT_NUMBER) && (nt2 & NT_NUMBER))
+    if (is_number_type(nt1) && is_number_type(nt2))
 	return compare_numnodes(n1, n2);
 
-    if (nt1 & NT_NUMBER) {
+    if (is_number_type(nt1)) {
 	nn2 = cnv_node_to_numnode(n2);
 	if (nn2 != UNBOUND) {
 	    icmp = compare_numnodes(n1, nn2);
@@ -653,7 +653,7 @@ int compare_node(NODE *n1, NODE *n2, BOOLEAN ignorecase) {
 	}
     }
 
-    if (nt2 & NT_NUMBER) {
+    if (is_number_type(nt2)) {
 	nn1 = cnv_node_to_numnode(n1);
 	if (nn1 != UNBOUND) {
 	    icmp = compare_numnodes(nn1, n2);
@@ -680,7 +680,7 @@ int compare_node(NODE *n1, NODE *n2, BOOLEAN ignorecase) {
 		icmp = getstrlen(a1) - getstrlen(a2);
 	}
     }
-    else if (nt1 & NT_BACKSL || nt2 & NT_BACKSL) {
+    else if (backslashed_type(nt1) || backslashed_type(nt2)) {
 	if (getstrptr(a1) == getstrptr(a2))
 	    icmp = getstrlen(a1) - getstrlen(a2);
 	else {

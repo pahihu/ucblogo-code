@@ -255,12 +255,12 @@ void real_print_node(FILE *strm, NODE *nd, int depth, int width) {
 
 	sprintf(&num[7],"%d", (int)nd);
 	ndprintf(strm,num);
-    } else if ((ndty = nodetype(nd)) & NT_PRIM) {
+    } else if (is_prim_type((ndty = nodetype(nd)))) {
 	ndprintf(strm, "PRIM");
     } else if (ndty == CONT) {
 	ndprintf(strm, "[<CONT> %s]", cons(make_intnode((FIXNUM)car(nd)),
 					   cdr(nd)));
-    } else if (ndty & NT_LIST) {
+    } else if (is_list_type(ndty)) {
 	print_char(strm,'[');
 	real_print_help(strm, nd, depth-1, width);
 	print_char(strm,']');
