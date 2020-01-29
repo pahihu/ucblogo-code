@@ -70,7 +70,8 @@ FIXNUM seg_size = SEG_SIZE;
 
 /* A new segment of nodes is added if fewer than freed_threshold nodes are
    freed in one GC run */
-#define freed_threshold ((long int)(seg_size * 0.4))
+// #define freed_threshold ((long int)(seg_size * 0.4))
+#define freed_threshold 6400
 
 NODE *free_list = NIL;                /* global ptr to free node list */
 struct segment *segment_list = NULL;  /* global ptr to segment list */
@@ -84,11 +85,52 @@ long int mem_allocated = 0, mem_freed = 0;
 NODE *generation[NUM_GENS] = {NIL};
 
 /* ptr to list of nodes that point to younger nodes */
-NODE *oldyoungs = NIL;
 BOOLEAN oldyoungs_dirty = FALSE;
 #define DEBUGSTREAM     (dribblestream ? dribblestream : stdout)
 
-/*long*/ int current_gc = 0;
+#define MAX_NODEPTRS    2048
+
+#define GC_OLDYOUNG     0001
+
+struct oldyoung {
+    struct oldyoung *next;
+    int    num_nodes;
+    NODE  *nodes[MAX_NODEPTRS];
+};
+
+struct oldyoung *oldyoung_list = NULL;
+struct oldyoung *oldyoung_free = NULL;
+int num_oldyoung_segments = 0, num_segments = 0;
+int num_gc_full = 0, num_gc_incr = 0;
+int num_newnode = 0;
+
+struct oldyoung *addoldyoungseg(void) {
+    struct oldyoung *seg;
+
+    seg = (struct oldyoung*)malloc(sizeof(struct oldyoung));
+    if (NULL == seg)
+        err_logo(OUT_OF_MEM_UNREC, NIL);
+    seg->num_nodes = 0;
+    seg->next = NULL;
+    num_oldyoung_segments++;
+    return seg;
+}
+
+void add_oldyoung(NODE *ptr) {
+    for (;;) {
+        if (oldyoung_free->num_nodes < MAX_NODEPTRS) {
+            ptr->gc_flags |= GC_OLDYOUNG;
+            oldyoung_free->nodes[oldyoung_free->num_nodes++] = ptr;
+            return;
+        }
+        if (NULL == oldyoung_free->next) {
+            oldyoung_free->next = addoldyoungseg();
+        }
+        oldyoung_free = oldyoung_free->next;
+    }
+}
+
+int current_gc = 0;
 
 long int gc_stack_malloced = 0;
 
@@ -142,6 +184,7 @@ BOOLEAN addseg(void) {
             free_list = &newseg->nodes[p];
 	    settype(&newseg->nodes[p], NTFREE);
 	}
+        num_segments++;
 	return 1;
     } else
   	return 0;
@@ -197,41 +240,45 @@ NODETYPES nodetype(NODE *nd) {
 
 void check_oldyoung(NODE *old, NODE *new) {
     if (VALID_PTR(new) && (new->my_gen < old->my_gen) &&
-			      old->oldyoung_next == NIL) {
-	old->oldyoung_next = oldyoungs;
-	oldyoungs = old;
+			      0 == (old->gc_flags & GC_OLDYOUNG)) {
+        add_oldyoung(old);
     }
 }
 
 void check_valid_oldyoung(NODE *old, NODE *new) {
     if (new == NIL) return;
-    if ((new->my_gen < old->my_gen) && old->oldyoung_next == NIL) {
-	old->oldyoung_next = oldyoungs;
-	oldyoungs = old;
+    if ((new->my_gen < old->my_gen) && 0 == (old->gc_flags & GC_OLDYOUNG)) {
+        add_oldyoung(old);
     }
 }
 
 void clean_oldyoungs(void) {
-    NODE **prev;
-    NODE *nd, *next;
-    long int num_cleaned;
+    struct oldyoung *current;
+    int i;
+    NODE *ptr;
+#ifdef GC_DEBUG
+    FIXNUM num_cleaned = 0;
+#endif
 
-    if (FALSE == oldyoungs_dirty)
-        return;
+    if (FALSE == oldyoungs_dirty) return;
 
-    num_cleaned = 0;
-    prev = &oldyoungs;
-    for (nd = oldyoungs; nd != NIL; ) {
-        if (NTFREE != nodetype(nd)) {
-             *prev = nd; prev = &(nd->oldyoung_next);
-             nd = nd->oldyoung_next;
-        } else {
-             next = nd->oldyoung_next;
-             nd->oldyoung_next = NIL;
-             nd = next;
-             num_cleaned++;
+    oldyoung_free = NULL;
+    for (current = oldyoung_list; current; current = current->next) {
+        for (i = 0; i < current->num_nodes; ) {
+            ptr = current->nodes[i];
+            if (NTFREE == nodetype(ptr)) {
+#ifdef GC_DEBUG
+                num_cleaned++;
+#endif
+                if (NULL == oldyoung_free)
+                    oldyoung_free = current;
+                current->nodes[i] = current->nodes[--(current->num_nodes)];
+                continue;
+            }
+            i++;
         }
     }
+
     oldyoungs_dirty = FALSE;
 
 #ifdef GC_DEBUG
@@ -276,6 +323,9 @@ void do_gc(BOOLEAN full) {
     register int aa, bb, cc, dd, ee;
 #endif
 
+    if (full) num_gc_full++;
+    else num_gc_incr++;
+
     int_during_gc = 0;
     inside_gc++;
     gc(full);
@@ -288,6 +338,8 @@ void do_gc(BOOLEAN full) {
 NODE *newnode(NODETYPES type) {
     register NODE *newnd;
     static NODE phony;
+
+    num_newnode++;
 
     while ((newnd = free_list) == NIL && NOT_THROWING) {
 	do_gc(FALSE);
@@ -302,7 +354,7 @@ NODE *newnode(NODETYPES type) {
 	newnd->mark_gc = 0;
 	newnd->next = generation[0];
 	generation[0] = newnd;
-	newnd->oldyoung_next = NIL;
+	newnd->gc_flags = 0;
 	settype(newnd, type);
 	mem_nodes++;
 	if (mem_nodes > mem_max) mem_max = mem_nodes;
@@ -329,15 +381,14 @@ NODE *cons(NODE *x, NODE *y) {
 #define mmark(child) {if ((child)->my_gen < nd->my_gen) \
 			 {mark(child); got_young++;}}
 
-NODE **inter_gen_mark (NODE **prev) {
+int inter_gen_mark (NODE *nd) {
 /* Mark/traverse pointers to younger generations only */
-    NODE* nd = *prev;
     NODE** array_ptr;
     NODE* tmp_node;
     int loop;
     int got_young = 0;
 
-    if (nd->my_gen <= mark_gen_gc) return &(nd->oldyoung_next);
+    if (nd->my_gen <= mark_gen_gc) return 1;
     switch (nodetype(nd)) {
 	case CONS:
 	case CASEOBJ:
@@ -380,14 +431,10 @@ NODE **inter_gen_mark (NODE **prev) {
 	    }
 	    break;
     }
-// #ifdef WHYDOESNTTHISWORK
     if (!got_young) {	/* nd no longer points to younger */
-	*prev = nd->oldyoung_next;
-   	nd->oldyoung_next = NIL;
-   	return prev;
+   	return 0;
     }
-// #endif
-    return &(nd->oldyoung_next);
+    return 1;
 }
 
 void gc_inc () {
@@ -517,16 +564,17 @@ void gc(BOOLEAN no_error) {
     NODE **top_stack;
     NODE *nd, *tmpnd;
     long int num_freed = 0;
-    NODE **tmp_ptr, **prev;
+    NODE **tmp_ptr;
     long int freed_sofar = 0;
     NODE** array_ptr;
     NODE* tmp_node;
     NODE *obj, *caselist;
     int anygood;
-    int i;
+    int i, j;
     short int loop;
     int gen_gc; /* deepest generation to garbage collect */
     int gctwa;	/* garbage collect truly worthless atoms */
+    struct oldyoung *oldies;
 
     if (gc_overflow_flag == 1) {
 	if (!addseg()) {
@@ -685,11 +733,21 @@ re_mark:
 #endif
 
     /* check pointers from old generations to young */
-    for (prev = &oldyoungs; *prev != Unbound; prev = inter_gen_mark(prev))
+    for (oldies = oldyoung_list; oldies; oldies = oldies->next) {
+        for (i = 0; i < oldies->num_nodes; ) {
+            tmp_node = oldies->nodes[i];
+            j = inter_gen_mark(tmp_node);
+            if (0 == j) {
+                tmp_node->gc_flags &= ~GC_OLDYOUNG;
+                oldies->nodes[i] = oldies->nodes[--(oldies->num_nodes)];
+                continue;
+            }
+            i++;
 #ifdef GC_DEBUG
-        num_visited++
+            num_visited++;
 #endif
-        ;
+        }
+    }
 
 #ifdef GC_DEBUG
     fprintf(DEBUGSTREAM, "inter_gen %ld marked %ld visited\n", num_examined, num_visited); fflush(DEBUGSTREAM);
@@ -807,16 +865,8 @@ re_mark:
 		num_freed++;
 		mem_nodes--;
          	*tmp_ptr = nd->next;
-     		if (nd->oldyoung_next != NIL) {
-#ifdef GC_OPT
+     		if (nd->gc_flags & GC_OLDYOUNG) {
                     oldyoungs_dirty = TRUE;
-#else
-		    for (prev = &oldyoungs; *prev != nd;
-			    prev = &((*prev)->oldyoung_next))
-		        ;
-		    *prev = nd->oldyoung_next;
-		    nd->oldyoung_next = NIL;
-#endif
 		}
         	switch (nodetype(nd)) {
 		    case ARRAY:
@@ -909,7 +959,7 @@ void fill_reserve_tank(void) {
 	newnd->n_cdr = p;
 	newnd->n_obj = NIL;
 	newnd->next = NIL;
-	newnd->oldyoung_next = NIL;
+	newnd->gc_flags = 0;
 	p = newnd;
     }
     reserve_tank = p;
@@ -928,4 +978,18 @@ void use_reserve_tank(void) {
 
 void check_reserve_tank(void) {
     if (reserve_tank == NIL) fill_reserve_tank();
+}
+
+void mem_init(void) {
+    (void)addseg();
+    oldyoung_list = addoldyoungseg();
+    oldyoung_free = oldyoung_list;
+}
+
+void mem_stat(void) {
+    fprintf(stderr,"#oldyoung_segments = %d\n",num_oldyoung_segments);
+    fprintf(stderr,"#segments = %d\n",num_segments);
+    fprintf(stderr,"#newnode  = %d\n",num_newnode);
+    fprintf(stderr,"#incr GC = %d\n",num_gc_incr);
+    fprintf(stderr,"#full GC = %d\n",num_gc_full);
 }

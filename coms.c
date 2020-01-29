@@ -381,6 +381,7 @@ void prepare_to_exit(BOOLEAN okay) {
 
 NODE *lbye(NODE *args) {
     prepare_to_exit(TRUE);
+    mem_stat();
     if (ufun != NIL || loadstream != stdin) exit(0);
 #ifndef WIN32
     if (isatty(0) && isatty(1))

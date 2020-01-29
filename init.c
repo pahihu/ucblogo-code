@@ -517,7 +517,7 @@ void init(void) {
     loadstream = stdin;
 
     fill_reserve_tank();
-    oldyoungs = Unbound = newnode(PUNBOUND);
+    Unbound = newnode(PUNBOUND);
 
 #ifdef HAVE_SRANDOM
     srandom((int)time((time_t *)NULL));

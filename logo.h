@@ -128,8 +128,13 @@ typedef enum {wrapmode, fencemode, windowmode} mode_type;
 #ifdef THINK_C
 #define SEG_SIZE	4000
 #else
-#define SEG_SIZE        16000 /* Should be a fairly big number for optimal GC
+#define SEG_SIZE_DFLT   16000 /* Should be a fairly big number for optimal GC
                                  Performance */
+#define SEG_SIZE_512K   13100
+#define SEG_SIZE_1M     26200
+#define SEG_SIZE_16M    419420
+#define SEG_SIZE        SEG_SIZE_512K
+
 #endif
 #endif
 #define MAX_PHYS_LINE   5000
@@ -291,10 +296,9 @@ typedef struct logo_node {
     NODETYPES node_type;
     unsigned char my_gen; /* Nodes's Generation */ /*GC*/
     unsigned char gen_age; /* How many times to GC at this generation */
-    unsigned char rsvd;
+    unsigned char gc_flags;
     int mark_gc;	/* when marked */
     struct logo_node *next; /* Link together nodes of the same age */ /*GC*/
-    struct logo_node *oldyoung_next;
     union {
 	struct {
 	    struct logo_node *ncar;

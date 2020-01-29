@@ -236,13 +236,14 @@ int main(int argc, char *argv[]) {
 #endif
 
     bottom_stack = &exec_list; /*GC*/
+    fprintf(stderr,"sizeof(struct logo_node)=%ld\n",sizeof(struct logo_node));
 
 #ifndef HAVE_WX
 #ifdef x_window
     x_window_init(argc, argv);
 #endif
 #endif
-    (void)addseg();
+    mem_init();
     term_init();
     init();
 
