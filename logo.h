@@ -130,10 +130,10 @@ typedef enum {wrapmode, fencemode, windowmode} mode_type;
 #else
 #define SEG_SIZE_DFLT   16000 /* Should be a fairly big number for optimal GC
                                  Performance */
-#define SEG_SIZE_512K   13100
-#define SEG_SIZE_1M     26200
-#define SEG_SIZE_16M    419420
-#define SEG_SIZE        SEG_SIZE_512K
+#define SEG_SIZE_512K   13106
+#define SEG_SIZE_1M     26213
+#define SEG_SIZE_16M    419429
+#define SEG_SIZE        SEG_SIZE_1M
 
 #endif
 #endif
@@ -432,8 +432,13 @@ typedef struct logo_node {
 typedef enum { RUN, STOP, OUTPUT, THROWING, MACRO_RETURN } CTRLTYPE;
 
 struct segment {
-	struct segment *next;
-	FIXNUM size;
+        union {
+            struct {
+	        struct segment *next;
+	        FIXNUM size;
+            } header;
+            struct logo_node dummy;
+        } u;
 	struct logo_node nodes[1];
 };
 

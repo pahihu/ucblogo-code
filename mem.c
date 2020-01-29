@@ -70,8 +70,7 @@ FIXNUM seg_size = SEG_SIZE;
 
 /* A new segment of nodes is added if fewer than freed_threshold nodes are
    freed in one GC run */
-// #define freed_threshold ((long int)(seg_size * 0.4))
-#define freed_threshold 6400
+#define freed_threshold ((long int)(seg_size * 0.4))
 
 NODE *free_list = NIL;                /* global ptr to free node list */
 struct segment *segment_list = NULL;  /* global ptr to segment list */
@@ -100,9 +99,11 @@ struct oldyoung {
 
 struct oldyoung *oldyoung_list = NULL;
 struct oldyoung *oldyoung_free = NULL;
+#ifdef MEM_STATS
 int num_oldyoung_segments = 0, num_segments = 0;
 int num_gc_full = 0, num_gc_incr = 0;
 int num_newnode = 0;
+#endif
 
 struct oldyoung *addoldyoungseg(void) {
     struct oldyoung *seg;
@@ -112,7 +113,9 @@ struct oldyoung *addoldyoungseg(void) {
         err_logo(OUT_OF_MEM_UNREC, NIL);
     seg->num_nodes = 0;
     seg->next = NULL;
+#ifdef MEM_STATS
     num_oldyoung_segments++;
+#endif
     return seg;
 }
 
@@ -172,19 +175,25 @@ NODE *lsetsegsz(NODE *args) {
 BOOLEAN addseg(void) {
     long int p;
     struct segment *newseg;
+    unsigned long ptr;
 
-    if ((newseg = (struct segment *)malloc(sizeof(struct segment)
-					   + seg_size*sizeof(struct logo_node)))
-            != NULL) {
-        newseg->next = segment_list;
-	newseg->size = seg_size;
+    newseg = (struct segment *)malloc(sizeof(struct segment)
+					   + (seg_size - 1)
+                                           * sizeof(struct logo_node));
+    if (newseg != NULL) {
+        newseg->u.header.next = segment_list;
+	newseg->u.header.size = seg_size;
         segment_list = newseg;
+        // ptr = (unsigned long)&(newseg->nodes[0]);
+        // fprintf(stderr,"addseg: %016lx\n",ptr);
         for (p = 0; p < seg_size; p++) {
             newseg->nodes[p].next = free_list;
             free_list = &newseg->nodes[p];
 	    settype(&newseg->nodes[p], NTFREE);
 	}
+#ifdef MEM_STATS
         num_segments++;
+#endif
 	return 1;
     } else
   	return 0;
@@ -215,8 +224,8 @@ BOOLEAN valid_pointer (volatile NODE *ptr_val) {
    
     if (ptr_val == NIL) return 0;
     for (current_seg = segment_list; current_seg != NULL;
-		current_seg = current_seg->next) {
-	size = current_seg->size;
+		current_seg = current_seg->u.header.next) {
+	size = current_seg->u.header.size;
 	if ((ptr >= (unsigned long int)&current_seg->nodes[0]) &&
 	    (ptr <= (unsigned long int)&current_seg->nodes[size-1]) &&
 	    ((ptr - (unsigned long int)&current_seg->nodes[0])%
@@ -323,8 +332,10 @@ void do_gc(BOOLEAN full) {
     register int aa, bb, cc, dd, ee;
 #endif
 
+#ifdef MEM_STAT
     if (full) num_gc_full++;
     else num_gc_incr++;
+#endif
 
     int_during_gc = 0;
     inside_gc++;
@@ -339,22 +350,28 @@ NODE *newnode(NODETYPES type) {
     register NODE *newnd;
     static NODE phony;
 
+#ifdef MEM_STAT
     num_newnode++;
+#endif
 
     while ((newnd = free_list) == NIL && NOT_THROWING) {
 	do_gc(FALSE);
     }
     if (newnd != NIL) {
 	free_list = newnd->next;
+        memset(newnd, 0, sizeof(struct logo_node));
+#if 0
 	newnd->n_car = NIL;
 	newnd->n_cdr = NIL;
 	newnd->n_obj = NIL;
 	newnd->my_gen = 0;
-	newnd->gen_age = gc_age_threshold;
 	newnd->mark_gc = 0;
+	newnd->gc_flags = 0;
+#endif
+
+	newnd->gen_age = gc_age_threshold;
 	newnd->next = generation[0];
 	generation[0] = newnd;
-	newnd->gc_flags = 0;
 	settype(newnd, type);
 	mem_nodes++;
 	if (mem_nodes > mem_max) mem_max = mem_nodes;
@@ -981,15 +998,22 @@ void check_reserve_tank(void) {
 }
 
 void mem_init(void) {
+    char *p0, *p1;
     (void)addseg();
     oldyoung_list = addoldyoungseg();
     oldyoung_free = oldyoung_list;
+    p0 = (char*)&(segment_list->nodes[0]);
+    p1 = (char*)&(segment_list->nodes[1]);
+    // fprintf(stderr,"node ptr diff=%ld\n",p1-p0);
 }
 
 void mem_stat(void) {
+#ifdef MEM_STAT
     fprintf(stderr,"#oldyoung_segments = %d\n",num_oldyoung_segments);
     fprintf(stderr,"#segments = %d\n",num_segments);
     fprintf(stderr,"#newnode  = %d\n",num_newnode);
     fprintf(stderr,"#incr GC = %d\n",num_gc_incr);
     fprintf(stderr,"#full GC = %d\n",num_gc_full);
+#endif
+    return;
 }
