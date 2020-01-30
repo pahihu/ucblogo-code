@@ -599,7 +599,7 @@ NODE *ltime(NODE *args) {
 #else
     fval = (FLONUM) time(NULL);
 #endif
-    val = newnode(FLOATT);
+    val = newnode_unsafe(FLOATT);
     setfloat(val, fval);
     return val;
 }

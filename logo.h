@@ -205,10 +205,11 @@ typedef unsigned char NODETYPES;
 #endif
 
 #define is_list_type(nt)        ((nt) & NT_LIST)
-#define is_number_type(nt)      (((nt) & 00376) == INT)
-#define is_prim_type(nt)        (((nt) & 00374) == PRIM)
+#define is_number_type(nt)      (((nt) & 0376) == INT)
+#define is_prim_type(nt)        (((nt) & 0374) == PRIM)
 #define is_word_type(nt)        ((nt) & NT_WORD)
-#define backslashed_type(nt)    (((nt) & 00376) == BACKSLASH_STRING)
+#define backslashed_type(nt)    (((nt) & 0376) == BACKSLASH_STRING)
+#define is_string_type(nt)      (((nt) & 0374) == STRING)
 
 #define aggregate(nd)	(nodetype(nd) & NT_AGGR)
 #define is_cont(nd)	(nodetype(nd) == CONT)

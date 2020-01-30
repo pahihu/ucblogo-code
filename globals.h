@@ -109,6 +109,7 @@ extern void setobject(NODE *, NODE *);
 extern void setcar(NODE *, NODE *);
 extern void setcdr(NODE *, NODE *);
 extern NODE *newnode(NODETYPES);
+extern NODE *newnode_unsafe(NODETYPES);
 extern NODE *cons(NODE *, NODE *);
 extern void mark(NODE *);
 extern void gc(BOOLEAN);

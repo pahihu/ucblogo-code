@@ -94,7 +94,7 @@ NODE *lrandom(NODE *arg) {
 	    r = (range <= 0 ? 0 : r % range);
 #endif
 	    r += base;
-	    val = newnode(INT);
+	    val = newnode_unsafe(INT);
 	    setint(val, (FIXNUM)r);
 	    return(val);
 	} else return(UNBOUND);
@@ -431,10 +431,10 @@ NODE *binary(NODE *args, char fcn) {
     }	/* end dyadic */
     if (NOT_THROWING) {
 	if (imode) {
-	    val = newnode(INT);
+	    val = newnode_unsafe(INT);
 	    setint(val, ival);
 	} else {
-	    val = newnode(FLOATT);
+	    val = newnode_unsafe(FLOATT);
 	    setfloat(val, fval);
 	}
 	return(val);

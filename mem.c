@@ -332,7 +332,7 @@ void do_gc(BOOLEAN full) {
     register int aa, bb, cc, dd, ee;
 #endif
 
-#ifdef MEM_STAT
+#ifdef MEM_STATS
     if (full) num_gc_full++;
     else num_gc_incr++;
 #endif
@@ -346,11 +346,11 @@ void do_gc(BOOLEAN full) {
     }
 }
 
-NODE *newnode(NODETYPES type) {
+NODE *newnode_unsafe(NODETYPES type) {
     register NODE *newnd;
     static NODE phony;
 
-#ifdef MEM_STAT
+#ifdef MEM_STATS
     num_newnode++;
 #endif
 
@@ -359,15 +359,11 @@ NODE *newnode(NODETYPES type) {
     }
     if (newnd != NIL) {
 	free_list = newnd->next;
-        memset(newnd, 0, sizeof(struct logo_node));
-#if 0
-	newnd->n_car = NIL;
-	newnd->n_cdr = NIL;
-	newnd->n_obj = NIL;
-	newnd->my_gen = 0;
-	newnd->mark_gc = 0;
-	newnd->gc_flags = 0;
-#endif
+
+        *((__UINT64_TYPE__ *)newnd) = 0;
+	// newnd->my_gen = 0;
+	// newnd->mark_gc = 0;
+	// newnd->gc_flags = 0;
 
 	newnd->gen_age = gc_age_threshold;
 	newnd->next = generation[0];
@@ -379,6 +375,16 @@ NODE *newnode(NODETYPES type) {
     } else return &phony;
 }
 
+NODE *newnode(NODETYPES type) {
+    NODE *newnd = newnode_unsafe(type);
+
+    newnd->n_car = NIL;
+    newnd->n_cdr = NIL;
+    newnd->n_obj = NIL;
+
+    return newnd;
+}
+
 #ifdef THINK_C
 #pragma options(!honor_register)
 #endif
@@ -387,16 +393,17 @@ NODE *newnode(NODETYPES type) {
 #endif
 
 NODE *cons(NODE *x, NODE *y) {
-    NODE *val = newnode(CONS);
+    NODE *val = newnode_unsafe(CONS);
 
     /* New node can't possibly point to younger one, so no need to check */
     val->n_car = x;
     val->n_cdr = y;
+    val->n_obj = NIL;
     return(val);
 }
 
 #define mmark(child) {if ((child)->my_gen < nd->my_gen) \
-			 {mark(child); got_young++;}}
+			 {mark(child); got_young = 1;}}
 
 int inter_gen_mark (NODE *nd) {
 /* Mark/traverse pointers to younger generations only */
@@ -448,10 +455,8 @@ int inter_gen_mark (NODE *nd) {
 	    }
 	    break;
     }
-    if (!got_young) {	/* nd no longer points to younger */
-   	return 0;
-    }
-    return 1;
+    /* when got_young = 0, nd no longer points to younger */
+    return got_young; 
 }
 
 void gc_inc () {
@@ -1008,7 +1013,7 @@ void mem_init(void) {
 }
 
 void mem_stat(void) {
-#ifdef MEM_STAT
+#ifdef MEM_STATS
     fprintf(stderr,"#oldyoung_segments = %d\n",num_oldyoung_segments);
     fprintf(stderr,"#segments = %d\n",num_segments);
     fprintf(stderr,"#newnode  = %d\n",num_newnode);

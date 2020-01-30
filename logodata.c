@@ -344,14 +344,14 @@ NODE *make_colon(NODE *cnd) {
 }
 
 NODE *make_intnode(FIXNUM i) {
-    NODE *nd = newnode(INT);
+    NODE *nd = newnode_unsafe(INT);
 
     setint(nd, i);
     return(nd);
 }
 
 NODE *make_floatnode(FLONUM f) {
-    NODE *nd = newnode(FLOATT);
+    NODE *nd = newnode_unsafe(FLOATT);
 
     setfloat(nd, f);
     return(nd);
@@ -374,10 +374,10 @@ NODE *cnv_node_to_numnode(NODE *ndi) {
 	if (*s == '+') ++s;
 	if (s2[getstrlen(ndi)-1] == '.') s2[getstrlen(ndi)-1] = 0;
 	if (dr - 1 || getstrlen(ndi) > 9) {
-	    val = newnode(FLOATT);
+	    val = newnode_unsafe(FLOATT);
 	    setfloat(val, atof(s));
 	} else {
-	    val = newnode(INT);
+	    val = newnode_unsafe(INT);
 	    setint(val, atol(s));
 	}
 	return(val);
@@ -422,7 +422,7 @@ NODE *cnv_node_to_strnode(NODE *nd) {
 }
 
 NODE *make_static_strnode(char *strptr) {
-    NODE *strnode = newnode(STRING);
+    NODE *strnode = newnode_unsafe(STRING);
 
     setstrptr(strnode, strptr);
     setstrhead(strnode, NULL);
@@ -453,7 +453,7 @@ NODE *make_array(FIXNUM len) {
     NODE *node;
     NODE **data;
 
-    node = newnode(ARRAY);
+    node = newnode_unsafe(ARRAY);
     setarrorg(node,1);
     setarrdim(node,len);
     data = (NODE **)malloc((size_t)len * sizeof(NODE *));
