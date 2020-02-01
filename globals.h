@@ -97,9 +97,6 @@ extern int ecma_get(int);
 #endif
 
 /* mem.c */
-extern NODE *free_list;
-extern struct segment *segment_list;
-extern NODE *oldyoungs;
 extern BOOLEAN inside_gc, int_during_gc;
 extern void mem_init(void);
 extern void mem_stat(void);
@@ -111,8 +108,6 @@ extern void setcdr(NODE *, NODE *);
 extern NODE *newnode(NODETYPES);
 extern NODE *newnode_unsafe(NODETYPES);
 extern NODE *cons(NODE *, NODE *);
-extern void mark(NODE *);
-extern void gc(BOOLEAN);
 extern NODE *lgc(NODE *);
 extern NODE *lnodes(NODE *);
 extern NODE *lsetsegsz(NODE *);

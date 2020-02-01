@@ -167,7 +167,7 @@ static int trace_level = 0;	/* indentation level when tracing */
 /* These first few functions are externed in globals.h */
 
 void numpush(FIXNUM obj, NODE **stack) {
-    NODE *temp = newnode(CONT); /*GC*/
+    NODE *temp = newnode_unsafe(CONT); /*GC*/
 
     temp->n_car = (NODE *)obj;
     temp->n_cdr = *stack;

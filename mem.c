@@ -17,6 +17,7 @@
  *      along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+#include <assert.h>
 #include <stdarg.h>
 
 #define WANT_EVAL_REGS 1
@@ -45,6 +46,9 @@ extern NODE *stack, *numstack, *expresn, *val, *parm, *catch_tag, *arg;
 #endif
 #endif
 
+static void mark(NODE *);
+static void gc(BOOLEAN);
+
 #ifdef THINK_C
 extern NODE *gcstack[];
 #else
@@ -72,8 +76,11 @@ FIXNUM seg_size = SEG_SIZE;
    freed in one GC run */
 #define freed_threshold ((long int)(seg_size * 0.4))
 
-NODE *free_list = NIL;                /* global ptr to free node list */
-struct segment *segment_list = NULL;  /* global ptr to segment list */
+#define NUM_SEGMENTS    256
+NODE *free_list = NIL;                  /* global ptr to free node list */
+struct segment *segment_list = NULL;    /* global ptr to segment list */
+struct segment *segments[NUM_SEGMENTS]; /* segment array */
+int num_segments = 0;                   /* number of segments allocated */
 
 long int mem_allocated = 0, mem_freed = 0;
 
@@ -81,15 +88,14 @@ long int mem_allocated = 0, mem_freed = 0;
 #define NUM_GENS 4
 
 /* ptr to list of Nodes in the same generation */
-NODE *generation[NUM_GENS] = {NIL};
+// NODE *generation[NUM_GENS] = {NIL};
+ZPTRTYPE generation[NUM_GENS] = {0};
 
 /* ptr to list of nodes that point to younger nodes */
 BOOLEAN oldyoungs_dirty = FALSE;
 #define DEBUGSTREAM     (dribblestream ? dribblestream : stdout)
 
 #define MAX_NODEPTRS    2048
-
-#define GC_OLDYOUNG     0001
 
 struct oldyoung {
     struct oldyoung *next;
@@ -100,12 +106,43 @@ struct oldyoung {
 struct oldyoung *oldyoung_list = NULL;
 struct oldyoung *oldyoung_free = NULL;
 #ifdef MEM_STATS
-int num_oldyoung_segments = 0, num_segments = 0;
+int num_oldyoung_segments = 0;
 int num_gc_full = 0, num_gc_incr = 0;
 int num_newnode = 0;
 #endif
 
-struct oldyoung *addoldyoungseg(void) {
+static BOOLEAN check_pointer (volatile NODE *ptr_val);
+
+static ZPTRTYPE zipPTR(NODE *ptr) {
+    int segment_base;
+    ZPTRTYPE ret;
+
+    if (NIL == ptr) return 0;
+    assert(check_pointer(ptr));
+    segment_base = ptr->segment_base;
+    assert(segment_base < num_segments);
+    ret = (ptr - &(segments[segment_base]->nodes[0]));
+    assert(ret < segments[segment_base]->u.header.size);
+    ret = (ret << 8) + segment_base;
+    return ret;
+}
+
+static NODE *unzipPTR(ZPTRTYPE ptr) {
+    NODE *ret;
+    int segment_base;
+
+    if (0 == ptr) return NIL;
+    segment_base = (NUM_SEGMENTS - 1) & ptr;
+    assert(segment_base < num_segments);
+    ret = &(segments[segment_base]->nodes[0]);
+    assert(segment_base == ret->segment_base);
+    assert((ptr >> 8) < segments[segment_base]->u.header.size);
+    ret = ret + (ptr >> 8);
+    assert(check_pointer(ret));
+    return ret;
+}
+
+static struct oldyoung *addoldyoungseg(void) {
     struct oldyoung *seg;
 
     seg = (struct oldyoung*)malloc(sizeof(struct oldyoung));
@@ -119,10 +156,10 @@ struct oldyoung *addoldyoungseg(void) {
     return seg;
 }
 
-void add_oldyoung(NODE *ptr) {
+static void add_oldyoung(NODE *ptr) {
     for (;;) {
         if (oldyoung_free->num_nodes < MAX_NODEPTRS) {
-            ptr->gc_flags |= GC_OLDYOUNG;
+            ptr->gc.oldyoung = 1;
             oldyoung_free->nodes[oldyoung_free->num_nodes++] = ptr;
             return;
         }
@@ -133,7 +170,10 @@ void add_oldyoung(NODE *ptr) {
     }
 }
 
-int current_gc = 0;
+#define GC_NOTMARKED    0
+#define GC_GCTWA        255
+
+unsigned char current_gc = 0;
 
 long int gc_stack_malloced = 0;
 
@@ -172,10 +212,13 @@ NODE *lsetsegsz(NODE *args) {
     return UNBOUND;
 }
 
-BOOLEAN addseg(void) {
+static BOOLEAN addseg(void) {
     long int p;
     struct segment *newseg;
-    unsigned long ptr;
+    // unsigned long ptr;
+
+    if (NUM_SEGMENTS == num_segments) /* segments[] array is full? */
+        return 0;
 
     newseg = (struct segment *)malloc(sizeof(struct segment)
 					   + (seg_size - 1)
@@ -187,17 +230,32 @@ BOOLEAN addseg(void) {
         // ptr = (unsigned long)&(newseg->nodes[0]);
         // fprintf(stderr,"addseg: %016lx\n",ptr);
         for (p = 0; p < seg_size; p++) {
-            newseg->nodes[p].next = free_list;
-            free_list = &newseg->nodes[p];
-	    settype(&newseg->nodes[p], NTFREE);
+            newseg->nodes[p].nunion.next_free = free_list;
+            free_list = &(newseg->nodes[p]);
+	    settype(&(newseg->nodes[p]), NTFREE);
+            newseg->nodes[p].segment_base = num_segments;
 	}
-#ifdef MEM_STATS
-        num_segments++;
-#endif
+        segments[num_segments++] = newseg;
 	return 1;
-    } else
-  	return 0;
+    }
+    return 0;
 }
+
+static void clear_mark_gc(void) {
+    struct segment *seg;
+    int p;
+    NODE *ptr;
+
+    for (seg = segment_list; seg; seg = seg->u.header.next) {
+        for (p = 0; p < seg->u.header.size; p++) {
+            ptr = &(seg->nodes[p]);
+            if (NTFREE == ptr->node_type ||
+                GC_GCTWA == ptr->mark_gc) continue;
+            ptr->mark_gc = GC_NOTMARKED;
+        }
+    }
+}
+
 
 #ifdef THINK_C
 #pragma options(!global_optimizer)
@@ -217,7 +275,7 @@ BOOLEAN addseg(void) {
 #define VALID_PTR(x)    (valid_pointer(x))
 #endif
 
-BOOLEAN valid_pointer (volatile NODE *ptr_val) {
+static BOOLEAN check_pointer (volatile NODE *ptr_val) {
     struct segment* current_seg;
     unsigned long int ptr = (unsigned long int)ptr_val;
     FIXNUM size;
@@ -226,9 +284,27 @@ BOOLEAN valid_pointer (volatile NODE *ptr_val) {
     for (current_seg = segment_list; current_seg != NULL;
 		current_seg = current_seg->u.header.next) {
 	size = current_seg->u.header.size;
-	if ((ptr >= (unsigned long int)&current_seg->nodes[0]) &&
-	    (ptr <= (unsigned long int)&current_seg->nodes[size-1]) &&
-	    ((ptr - (unsigned long int)&current_seg->nodes[0])%
+	if ((ptr >= (unsigned long int)&(current_seg->nodes[0])) &&
+	    (ptr <= (unsigned long int)&(current_seg->nodes[size-1])) &&
+	    ((ptr - (unsigned long int)&(current_seg->nodes[0]))%
+	                 (sizeof(struct logo_node)) == 0))
+	    return 1;
+    }
+    return 0;
+}
+
+static BOOLEAN valid_pointer (volatile NODE *ptr_val) {
+    struct segment* current_seg;
+    unsigned long int ptr = (unsigned long int)ptr_val;
+    FIXNUM size;
+   
+    if (ptr_val == NIL) return 0;
+    for (current_seg = segment_list; current_seg != NULL;
+		current_seg = current_seg->u.header.next) {
+	size = current_seg->u.header.size;
+	if ((ptr >= (unsigned long int)&(current_seg->nodes[0])) &&
+	    (ptr <= (unsigned long int)&(current_seg->nodes[size-1])) &&
+	    ((ptr - (unsigned long int)&(current_seg->nodes[0]))%
 	                 (sizeof(struct logo_node)) == 0))
 	    return (ptr_val->node_type != NTFREE);
     }
@@ -247,21 +323,21 @@ NODETYPES nodetype(NODE *nd) {
     return(nd->node_type);
 }
 
-void check_oldyoung(NODE *old, NODE *new) {
-    if (VALID_PTR(new) && (new->my_gen < old->my_gen) &&
-			      0 == (old->gc_flags & GC_OLDYOUNG)) {
+static void check_oldyoung(NODE *old, NODE *new) {
+    if (VALID_PTR(new) && (new->gc.my_gen < old->gc.my_gen) &&
+			      0 == old->gc.oldyoung) {
         add_oldyoung(old);
     }
 }
 
 void check_valid_oldyoung(NODE *old, NODE *new) {
     if (new == NIL) return;
-    if ((new->my_gen < old->my_gen) && 0 == (old->gc_flags & GC_OLDYOUNG)) {
+    if ((new->gc.my_gen < old->gc.my_gen) && 0 == old->gc.oldyoung) {
         add_oldyoung(old);
     }
 }
 
-void clean_oldyoungs(void) {
+static void clean_oldyoungs(void) {
     struct oldyoung *current;
     int i;
     NODE *ptr;
@@ -323,7 +399,7 @@ void setcdr(NODE *nd, NODE *newcdr) {
 
 
 
-void do_gc(BOOLEAN full) {
+static void do_gc(BOOLEAN full) {
 #if 1
     jmp_buf env;
     setjmp(env);
@@ -358,16 +434,16 @@ NODE *newnode_unsafe(NODETYPES type) {
 	do_gc(FALSE);
     }
     if (newnd != NIL) {
-	free_list = newnd->next;
+	free_list = newnd->nunion.next_free;
 
-        *((__UINT64_TYPE__ *)newnd) = 0;
-	// newnd->my_gen = 0;
-	// newnd->mark_gc = 0;
-	// newnd->gc_flags = 0;
+        // *((__UINT64_TYPE__ *)newnd) = 0;
+	newnd->gc.my_gen = 0;
+	newnd->mark_gc = 0;
+	newnd->gc.oldyoung = 0;
 
-	newnd->gen_age = gc_age_threshold;
-	newnd->next = generation[0];
-	generation[0] = newnd;
+	newnd->gc.gen_age = gc_age_threshold;
+	newnd->next_gen = generation[0];
+	generation[0] = zipPTR(newnd);
 	settype(newnd, type);
 	mem_nodes++;
 	if (mem_nodes > mem_max) mem_max = mem_nodes;
@@ -402,17 +478,17 @@ NODE *cons(NODE *x, NODE *y) {
     return(val);
 }
 
-#define mmark(child) {if ((child)->my_gen < nd->my_gen) \
+#define mmark(child) {if ((child)->gc.my_gen < nd->gc.my_gen) \
 			 {mark(child); got_young = 1;}}
 
-int inter_gen_mark (NODE *nd) {
+static int inter_gen_mark (NODE *nd) {
 /* Mark/traverse pointers to younger generations only */
     NODE** array_ptr;
     NODE* tmp_node;
     int loop;
     int got_young = 0;
 
-    if (nd->my_gen <= mark_gen_gc) return 1;
+    if (nd->gc.my_gen <= mark_gen_gc) return 1;
     switch (nodetype(nd)) {
 	case CONS:
 	case CASEOBJ:
@@ -459,7 +535,7 @@ int inter_gen_mark (NODE *nd) {
     return got_young; 
 }
 
-void gc_inc () {
+static void gc_inc () {
     NODE **new_gcstack;
     long int loop;
 
@@ -508,13 +584,13 @@ void gc_inc () {
 }
 
 /* Iterative mark procedure */
-void mark(NODE* nd) {
+static void mark(NODE* nd) {
     int loop;
     NODE** array_ptr;
 
     if (gc_overflow_flag == 1) return;
     if (!VALID_PTR(nd)) return; /* NIL pointer */
-    if (nd->my_gen > mark_gen_gc) return; /* I'm too old */
+    if (nd->gc.my_gen > mark_gen_gc) return; /* I'm too old */
     if (nd->mark_gc == current_gc) return; /* I'm already marked */
 
     *gctop = nd;
@@ -522,10 +598,10 @@ void mark(NODE* nd) {
 
     while (gcbottom != gctop) {
 	nd = *gcbottom;
-	if ((VALID_PTR(nd)) && (nd->my_gen <= mark_gen_gc) &&
+	if ((VALID_PTR(nd)) && (nd->gc.my_gen <= mark_gen_gc) &&
 		(nd->mark_gc != current_gc)) {
-	    if (nd->mark_gc == -1) {
-		nd->mark_gc = 0;    /* this is a caseobj during gctwa */
+	    if (nd->mark_gc == GC_GCTWA) {
+		nd->mark_gc = GC_NOTMARKED; /* this is a caseobj during gctwa */
 		goto no_mark;	    /* so don't really mark yet */
 	    }
 	    nd->mark_gc = current_gc;
@@ -581,12 +657,13 @@ no_mark:
     }
 }
 
-void gc(BOOLEAN no_error) {
+static void gc(BOOLEAN no_error) {
     NODE *top;
     NODE **top_stack;
     NODE *nd, *tmpnd;
     long int num_freed = 0;
     NODE **tmp_ptr;
+    ZPTRTYPE *tmp_zptr;
     long int freed_sofar = 0;
     NODE** array_ptr;
     NODE* tmp_node;
@@ -622,7 +699,7 @@ void gc(BOOLEAN no_error) {
 	    for (nd = hash_table[loop]; nd != NIL; nd = cdr(nd)) {
 		tmpnd = caselist__object(car(nd));
 		while (tmpnd != NIL) {
-		    (car(tmpnd))->mark_gc = -1;
+		    (car(tmpnd))->mark_gc = GC_GCTWA;
 		    tmpnd = cdr(tmpnd);
 		}
 	    }
@@ -631,7 +708,11 @@ void gc(BOOLEAN no_error) {
 
 re_mark:
 
-    current_gc++;
+    /* wrap around current_gc: GC_NOTMARKED 1 ... GC_GCTWA */
+    if (++current_gc == GC_GCTWA) {
+        clear_mark_gc();
+        current_gc = 1;
+    }
 
 #ifdef GC_DEBUG
     fprintf(DEBUGSTREAM, "gen = %d\n", gen_gc); fflush(DEBUGSTREAM);
@@ -760,7 +841,7 @@ re_mark:
             tmp_node = oldies->nodes[i];
             j = inter_gen_mark(tmp_node);
             if (0 == j) {
-                tmp_node->gc_flags &= ~GC_OLDYOUNG;
+                tmp_node->gc.oldyoung = 0;
                 oldies->nodes[i] = oldies->nodes[--(oldies->num_nodes)];
                 continue;
             }
@@ -827,17 +908,20 @@ re_mark:
     /* Begin Sweep Phase */
    	
     for (loop = gen_gc; loop >= 0; loop--) {
-	tmp_ptr = &generation[loop];
-	for (nd = generation[loop]; nd != NIL; nd = *tmp_ptr) {
+	tmp_zptr = &generation[loop];
+	for (nd = unzipPTR(generation[loop]);
+             nd != NIL;
+             nd = unzipPTR(*tmp_zptr))
+        {
 	    if (nd->mark_gc == current_gc) {
-		if (--(nd->gen_age) == 0 && loop < NUM_GENS-1) {
+		if (--(nd->gc.gen_age) == 0 && loop < NUM_GENS-1) {
 		    /* promote to next gen */
-		    *tmp_ptr = nd->next;
-		    nd->next = generation[loop+1];
-		    generation[loop+1] = nd;
-		    nd->my_gen = loop+1;
+		    *tmp_zptr = nd->next_gen;
+		    nd->next_gen = generation[loop+1];
+		    generation[loop+1] = zipPTR(nd);
+		    nd->gc.my_gen = loop+1;
 		    if (max_gen == loop) max_gen++;
-		    nd->gen_age = gc_age_threshold;
+		    nd->gc.gen_age = gc_age_threshold;
 		    switch (nodetype(nd)) {
 			case CONS:
 			case CASEOBJ:
@@ -880,14 +964,14 @@ re_mark:
 		    }
        		} else {
 		    /* keep in this gen */
-		    tmp_ptr = &(nd->next);
+		    tmp_zptr = &(nd->next_gen);
          	}
 	    } else {
 		/* free */
 		num_freed++;
 		mem_nodes--;
-         	*tmp_ptr = nd->next;
-     		if (nd->gc_flags & GC_OLDYOUNG) {
+         	*tmp_zptr = nd->next_gen;
+     		if (nd->gc.oldyoung) {
                     oldyoungs_dirty = TRUE;
 		}
         	switch (nodetype(nd)) {
@@ -906,7 +990,7 @@ re_mark:
 			break;
 		}
 		settype (nd, NTFREE);
-	 	nd->next = free_list;
+	 	nd->nunion.next_free = free_list;
 	 	free_list = nd;
 	    }
 	}
@@ -975,13 +1059,13 @@ void fill_reserve_tank(void) {
 
     while (--i >= 0) {	/* make pairs not in any generation */
 	if ((newnd = free_list) == NIL) break;
-	free_list = newnd->next;
+	free_list = newnd->nunion.next_free;
 	settype(newnd, CONS);
 	newnd->n_car = NIL;
 	newnd->n_cdr = p;
 	newnd->n_obj = NIL;
-	newnd->next = NIL;
-	newnd->gc_flags = 0;
+	newnd->next_gen = 0;
+	newnd->gc.oldyoung = 0;
 	p = newnd;
     }
     reserve_tank = p;
@@ -993,7 +1077,7 @@ void use_reserve_tank(void) {
     reserve_tank = NIL;
     for ( ; nd != NIL; nd = cdr(nd) ) {
     	settype(nd, NTFREE);
-    	nd->next = free_list;
+    	nd->nunion.next_free = free_list;
     	free_list = nd;
     }
 }

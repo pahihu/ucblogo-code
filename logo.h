@@ -130,9 +130,9 @@ typedef enum {wrapmode, fencemode, windowmode} mode_type;
 #else
 #define SEG_SIZE_DFLT   16000 /* Should be a fairly big number for optimal GC
                                  Performance */
-#define SEG_SIZE_512K   13106
-#define SEG_SIZE_1M     26213
-#define SEG_SIZE_16M    419429
+#define SEG_SIZE_512K   16383
+#define SEG_SIZE_1M     32767
+#define SEG_SIZE_16M    524287
 #define SEG_SIZE        SEG_SIZE_1M
 
 #endif
@@ -293,14 +293,28 @@ struct string_block {
 #define incstrrefcnt(sh)        (((sh)->str_refcnt)++)
 #define decstrrefcnt(sh)        (--((sh)->str_refcnt))
 
+typedef unsigned int ZPTRTYPE;
+
 typedef struct logo_node {
     NODETYPES node_type;
-    unsigned char my_gen; /* Nodes's Generation */ /*GC*/
-    unsigned char gen_age; /* How many times to GC at this generation */
-    unsigned char gc_flags;
-    int mark_gc;	/* when marked */
-    struct logo_node *next; /* Link together nodes of the same age */ /*GC*/
+    /* 0xF0: my_gen, 0x0E:gen_age, 0x01: oldyoung */
+    struct {
+        unsigned char my_gen: 4;
+        unsigned char gen_age: 3;
+        unsigned char oldyoung: 1;
+    } gc;
+    // unsigned char my_gen; /* Nodes's Generation */ /*GC*/
+    // unsigned char gen_age; /* How many times to GC at this generation */
+    // unsigned char gc_flags;
+
+    unsigned char mark_gc;  /* when marked */
+    unsigned char segment_base; /* Node's segment base ptr */ /*GC*/
+    // unsigned char rsvd[2];
+
+    ZPTRTYPE next_gen; /* Link together nodes of the same generation */ /*GC*/
+
     union {
+        struct logo_node *next_free; /* Link together free nodes */ /*GC*/
 	struct {
 	    struct logo_node *ncar;
 	    struct logo_node *ncdr;
