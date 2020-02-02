@@ -79,8 +79,8 @@ FIXNUM seg_size = SEG_SIZE;
 #define NUM_SEGMENTS    256
 NODE *free_list = NIL;                  /* global ptr to free node list */
 struct segment *segment_list = NULL;    /* global ptr to segment list */
-struct segment *segments[NUM_SEGMENTS]; /* segment array */
-int num_segments = 0;                   /* number of segments allocated */
+NODE *segment_bases[NUM_SEGMENTS];      /* addresses of nodes[0] */
+int num_segment_bases = 0;              /* number of segments allocated */
 
 long int mem_allocated = 0, mem_freed = 0;
 
@@ -113,16 +113,27 @@ int num_newnode = 0;
 
 static BOOLEAN check_pointer (volatile NODE *ptr_val);
 
+#if 0
+#define zipPTR(p)       ((p)?(((p)-segment_bases[(p)->segment_base])<<8)+(p)->segment_base:0)
+#define unzipPTR(x)     ((x)?segment_bases[(NUM_SEGMENTS-1)&(x)]+((x)>>8):0)
+#endif
+
 static ZPTRTYPE zipPTR(NODE *ptr) {
     int segment_base;
     ZPTRTYPE ret;
+#ifndef NDEBUG
+    struct segment *segment;
+#endif
 
     if (NIL == ptr) return 0;
     assert(check_pointer(ptr));
     segment_base = ptr->segment_base;
-    assert(segment_base < num_segments);
-    ret = (ptr - &(segments[segment_base]->nodes[0]));
-    assert(ret < segments[segment_base]->u.header.size);
+    assert(segment_base < num_segment_bases);
+    ret = (ptr - segment_bases[segment_base]);
+#ifndef NDEBUG
+    segment = (struct segment *)(segment_bases[segment_base] - 1);
+    assert(ret < segment->u.header.size);
+#endif
     ret = (ret << 8) + segment_base;
     return ret;
 }
@@ -130,13 +141,19 @@ static ZPTRTYPE zipPTR(NODE *ptr) {
 static NODE *unzipPTR(ZPTRTYPE ptr) {
     NODE *ret;
     int segment_base;
+#ifndef NDEBUG
+    struct segment *segment;
+#endif
 
     if (0 == ptr) return NIL;
     segment_base = (NUM_SEGMENTS - 1) & ptr;
-    assert(segment_base < num_segments);
-    ret = &(segments[segment_base]->nodes[0]);
+    assert(segment_base < num_segment_bases);
+    ret = segment_bases[segment_base];
     assert(segment_base == ret->segment_base);
-    assert((ptr >> 8) < segments[segment_base]->u.header.size);
+#ifndef NDEBUG
+    segment = (struct segment *)(segment_bases[segment_base] - 1);
+    assert((ptr >> 8) < segment->u.header.size);
+#endif
     ret = ret + (ptr >> 8);
     assert(check_pointer(ret));
     return ret;
@@ -217,7 +234,7 @@ static BOOLEAN addseg(void) {
     struct segment *newseg;
     // unsigned long ptr;
 
-    if (NUM_SEGMENTS == num_segments) /* segments[] array is full? */
+    if (NUM_SEGMENTS == num_segment_bases) /* segment_bases[] array is full? */
         return 0;
 
     newseg = (struct segment *)malloc(sizeof(struct segment)
@@ -233,9 +250,9 @@ static BOOLEAN addseg(void) {
             newseg->nodes[p].nunion.next_free = free_list;
             free_list = &(newseg->nodes[p]);
 	    settype(&(newseg->nodes[p]), NTFREE);
-            newseg->nodes[p].segment_base = num_segments;
+            newseg->nodes[p].segment_base = num_segment_bases;
 	}
-        segments[num_segments++] = newseg;
+        segment_bases[num_segment_bases++] = &(newseg->nodes[0]);
 	return 1;
     }
     return 0;
@@ -400,13 +417,8 @@ void setcdr(NODE *nd, NODE *newcdr) {
 
 
 static void do_gc(BOOLEAN full) {
-#if 1
     jmp_buf env;
     setjmp(env);
-#else
-    register NODE *pa, *pb, *pc, *pd, *pe;	/* get registers onto stack */
-    register int aa, bb, cc, dd, ee;
-#endif
 
 #ifdef MEM_STATS
     if (full) num_gc_full++;
@@ -741,14 +753,14 @@ re_mark:
     mark(output_unode);
     mark(last_call);
     mark(Regs_Node);
-    mark(eval_buttonact);       //
+    mark(eval_buttonact);
     mark(file_list);
     mark(reader_name);
     mark(writer_name);
     mark(file_prefix);
     mark(save_name);
     mark(the_generation);
-    mark(tree_dk_how);          //
+    mark(tree_dk_how);
 #ifdef OBJECTS
     mark(logo_object);
     mark(current_object);
@@ -763,7 +775,6 @@ re_mark:
     mark(catch_tag);
     mark(arg);
 
-#if 1
     mark(proc);
     mark(argl);
     mark(unev);
@@ -783,9 +794,6 @@ re_mark:
     mark(usual_parent);
     mark(usual_caller);
 #endif
-#endif
-
-
 
 
 #ifdef GC_DEBUG
@@ -1099,7 +1107,7 @@ void mem_init(void) {
 void mem_stat(void) {
 #ifdef MEM_STATS
     fprintf(stderr,"#oldyoung_segments = %d\n",num_oldyoung_segments);
-    fprintf(stderr,"#segments = %d\n",num_segments);
+    fprintf(stderr,"#segments = %d\n",num_segment_bases);
     fprintf(stderr,"#newnode  = %d\n",num_newnode);
     fprintf(stderr,"#incr GC = %d\n",num_gc_incr);
     fprintf(stderr,"#full GC = %d\n",num_gc_full);
