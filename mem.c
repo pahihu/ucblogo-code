@@ -118,6 +118,8 @@ static BOOLEAN check_pointer (volatile NODE *ptr_val);
 #define unzipPTR(x)     ((x)?segment_bases[(NUM_SEGMENTS-1)&(x)]+((x)>>8):0)
 #endif
 
+#ifdef __LP64__
+
 static ZPTRTYPE zipPTR(NODE *ptr) {
     int segment_base;
     ZPTRTYPE ret;
@@ -158,6 +160,13 @@ static NODE *unzipPTR(ZPTRTYPE ptr) {
     assert(check_pointer(ret));
     return ret;
 }
+
+#else
+
+#define zipPTR(x)       x
+#define unzipPTR(x)     x
+
+#endif
 
 static struct oldyoung *addoldyoungseg(void) {
     struct oldyoung *seg;

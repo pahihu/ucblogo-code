@@ -293,23 +293,22 @@ struct string_block {
 #define incstrrefcnt(sh)        (((sh)->str_refcnt)++)
 #define decstrrefcnt(sh)        (--((sh)->str_refcnt))
 
+#ifdef __LP64__
 typedef unsigned int ZPTRTYPE;
+#else
+typedef struct logo_node *ZPTRTYPE;
+#endif
 
 typedef struct logo_node {
     NODETYPES node_type;
     /* 0xF0: my_gen, 0x0E:gen_age, 0x01: oldyoung */
     struct {
-        unsigned char my_gen: 4;
-        unsigned char gen_age: 3;
-        unsigned char oldyoung: 1;
+        unsigned char my_gen: 4; /* Node's Generation */ /*GC*/
+        unsigned char gen_age: 3; /* How many times to GC at this generation */
+        unsigned char oldyoung: 1; /* Node points to younger nodes */
     } gc;
-    // unsigned char my_gen; /* Nodes's Generation */ /*GC*/
-    // unsigned char gen_age; /* How many times to GC at this generation */
-    // unsigned char gc_flags;
-
     unsigned char mark_gc;  /* when marked */
     unsigned char segment_base; /* Node's segment base ptr */ /*GC*/
-    // unsigned char rsvd[2];
 
     ZPTRTYPE next_gen; /* Link together nodes of the same generation */ /*GC*/
 

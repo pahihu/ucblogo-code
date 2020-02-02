@@ -1,3 +1,5 @@
+OSX_MIN = -mmacosx-version-min=10.9
+
 ifeq ($(wxlogo),yes)
 GFX = -DHAVE_WX
 TERM_OBJS = wxMain.o wxTerminal.o wxTurtleGraphics.o TextEditor.o wxterm.o 
@@ -7,7 +9,9 @@ else
 GFX = -DX_DISPLAY_MISSING
 TERM_OBJS = term.o
 TERM_SRCS = term.c
-LIBS  = -lm -ltermcap 
+# PPC Linux
+# LIBS  = -lm -lncurses
+LIBS  = -lm -ltermcap
 endif
 
 ifeq ($(release),yes)
@@ -21,17 +25,17 @@ endif
 OBJLOGO = -DOBJECTS=1
 
 DBG = -g
-CC	= gcc$(GNU) $(DBG) -mmacosx-version-min=10.9 -Wall
+CC	= gcc$(GNU) $(DBG) $(OSX_MIN) -Wall
 OPT = $(DBG) -O2
 C_FLAGS	+= $(GFX) $(OBJLOGO) -DUSE_OLD_TTY
 CFLAGS = $(OPT) $(C_FLAGS)
-CXX     = g++$(GNU) $(DBG) -mmacosx-version-min=10.9 -Wall
+CXX     = g++$(GNU) $(DBG) $(OSX_MIN) -Wall
 CXXFLAGS = $(OPT) $(GFX) $(OBJLOGO) -I/usr/local/lib/wx/include/osx_cocoa-unicode-3.1 -I/usr/local/include/wx-3.1 -D_FILE_OFFSET_BITS=64 -DWXUSINGDLL -D__WXMAC__ -D__WXOSX__ -D__WXOSX_COCOA__ 
 LDFLAGS	= 
 prefix = /usr/local
 BINDIR        = $(prefix)/bin
 LIBLOC        = $(prefix)/lib/logo
-LINKER = g++$(GNU) $(DBG) -mmacosx-version-min=10.9
+LINKER = g++$(GNU) $(DBG) $(OSX_MIN)
 
 # LIBLOC      = `pwd`
 
