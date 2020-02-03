@@ -255,7 +255,7 @@ void real_print_node(FILE *strm, NODE *nd, int depth, int width) {
 
 	sprintf(&num[7],"%d", (int)nd);
 	ndprintf(strm,num);
-    } else if (is_prim_type((ndty = nodetype(nd)))) {
+    } else if ((ndty = nodetype(nd)) && is_prim_type(ndty)) {
 	ndprintf(strm, "PRIM");
     } else if (ndty == CONT) {
 	ndprintf(strm, "[<CONT> %s]", cons(make_intnode((FIXNUM)car(nd)),

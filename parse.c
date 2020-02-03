@@ -704,6 +704,7 @@ NODE *runparse_node(NODE *nd, NODE **ndsptr) {
 NODE *runparse(NODE *ndlist) {
     NODE *curnd = NIL, *outline = NIL, *tnode = NIL, *lastnode = NIL;
     char *str;
+    NODE *snd;
 
     if (nodetype(ndlist) == RUN_PARSE)
 		return parsed__runparse(ndlist);
@@ -711,8 +712,11 @@ NODE *runparse(NODE *ndlist) {
 	    err_logo(BAD_DATA_UNREC, ndlist);
 	    return(NIL);
     }
-    if (ndlist != NIL && is_word(curnd=car(ndlist)) && getstrlen(curnd) >= 2 &&
-	(str=getstrptr(curnd)) && *str++ == '#' && *str == '!')
+    if (ndlist != NIL && (curnd=car(ndlist)) && 
+        is_word(curnd) && 
+        (snd = cnv_node_to_strnode(curnd)) &&
+        getstrlen(snd) >= 2 &&
+	(str=getstrptr(snd)) && *str++ == '#' && *str == '!')
 	    return NIL;	    /* shell-script #! treated as comment line */
     while (ndlist != NIL) {
 	curnd = car(ndlist);
