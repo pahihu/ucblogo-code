@@ -108,6 +108,10 @@ NODE *err_logo(ERR_TYPES error_type, NODE *error_desc) {
     NODE *err_act, *val = UNBOUND;
 
     switch(error_type) {
+        case STACK_OVERFLOW:
+	    prepare_to_exit(FALSE);
+	    ndprintf(stdout,"%t\n",message_texts[STACK_OVERFLOW]);
+	    exit(1);
 	case FATAL:
 	    prepare_to_exit(FALSE);
 	    ndprintf(stdout,"%t\n",message_texts[FATAL]);

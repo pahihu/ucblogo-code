@@ -23,7 +23,7 @@
 #define WANT_EVAL_REGS 1
 #include "logo.h"
 #include "globals.h"
-extern NODE *stack, *numstack, *expresn, *val, *parm, *catch_tag, *arg;
+extern NODE *stack, *expresn, *val, *parm, *catch_tag, *arg;
 
 /* #ifdef ibm */
 /* #ifndef __RZTC__ */
@@ -46,7 +46,11 @@ extern NODE *stack, *numstack, *expresn, *val, *parm, *catch_tag, *arg;
 #endif
 #endif
 
-static void mark(NODE *);
+
+static void mark_safe(NODE *);
+static void mark_unsafe(NODE *);
+#define mark(x) if(VALID_PTR(x))mark_safe(x)
+
 static void gc(BOOLEAN);
 
 #ifdef THINK_C
@@ -118,7 +122,7 @@ static BOOLEAN check_pointer (volatile NODE *ptr_val);
 #define unzipPTR(x)     ((x)?segment_bases[(NUM_SEGMENTS-1)&(x)]+((x)>>8):0)
 #endif
 
-#ifdef __LP64__
+#if defined(__LP64__)
 
 static ZPTRTYPE zipPTR(NODE *ptr) {
     int segment_base;
@@ -204,8 +208,6 @@ unsigned char current_gc = 0;
 long int gc_stack_malloced = 0;
 
 long int gc_stack_size = GCMAX;
-
-long int gc_overflow_flag = 0;
 
 NODE *reserve_tank = NIL;
 
@@ -296,7 +298,7 @@ static void clear_mark_gc(void) {
 #define GC_OPT          1
 
 #ifdef GC_OPT
-#define VALID_PTR(x)    (!NILP(x))
+#define VALID_PTR(x)    (!NILP(x) && ((x)->node_type != NTFREE))
 #else
 #define VALID_PTR(x)    (valid_pointer(x))
 #endif
@@ -500,7 +502,7 @@ NODE *cons(NODE *x, NODE *y) {
 }
 
 #define mmark(child) {if ((child)->gc.my_gen < nd->gc.my_gen) \
-			 {mark(child); got_young = 1;}}
+        {if((child)->mark_gc != current_gc)mark_unsafe(child); got_young = 1;}}
 
 static int inter_gen_mark (NODE *nd) {
 /* Mark/traverse pointers to younger generations only */
@@ -560,8 +562,6 @@ static void gc_inc () {
     NODE **new_gcstack;
     long int loop;
 
-    if (gc_overflow_flag == 1) return;
-
     if (gctop == &mark_gcstack[gc_stack_size-1])
 	gctop = mark_gcstack;
     else
@@ -576,8 +576,8 @@ static void gc_inc () {
 	    /* no room to increse GC Stack */
 	    ndprintf(stdout, "\n%t\n", message_texts[CANT_GC]);
 	    ndprintf(stdout, "%t\n", message_texts[EXIT_NOW]);
+	    err_logo(OUT_OF_MEM_UNREC, NIL);
 
-	    gc_overflow_flag = 1;
 	} else {
 	    /* transfer old stack to new stack */
 	    new_gcstack[0] = *gcbottom;
@@ -605,14 +605,15 @@ static void gc_inc () {
 }
 
 /* Iterative mark procedure */
-static void mark(NODE* nd) {
+static void mark_unsafe(NODE* nd) {
     int loop;
     NODE** array_ptr;
 
-    if (gc_overflow_flag == 1) return;
+#if 0
     if (!VALID_PTR(nd)) return; /* NIL pointer */
     if (nd->gc.my_gen > mark_gen_gc) return; /* I'm too old */
     if (nd->mark_gc == current_gc) return; /* I'm already marked */
+#endif
 
     *gctop = nd;
     gc_inc();
@@ -678,6 +679,13 @@ no_mark:
     }
 }
 
+static void mark_safe(NODE *nd) {
+    if (nd->mark_gc == current_gc) return; /* I'm already marked */
+    if (nd->gc.my_gen > mark_gen_gc) return; /* I'm too old */
+
+    mark_unsafe(nd);
+}
+
 static void gc(BOOLEAN no_error) {
     NODE *top;
     NODE **top_stack;
@@ -695,15 +703,6 @@ static void gc(BOOLEAN no_error) {
     int gen_gc; /* deepest generation to garbage collect */
     int gctwa;	/* garbage collect truly worthless atoms */
     struct oldyoung *oldies;
-
-    if (gc_overflow_flag == 1) {
-	if (!addseg()) {
-	    err_logo(OUT_OF_MEM, NIL);
-	    if (free_list == NIL)
-		err_logo(OUT_OF_MEM_UNREC, NIL);
-	}
-	return;
-    }
 
     if (check_throwing)
         return;
@@ -777,7 +776,6 @@ re_mark:
 #endif
 
     mark(stack);
-    mark(numstack);
     mark(expresn);
     mark(val);
     mark(parm);
@@ -873,8 +871,6 @@ re_mark:
     fprintf(DEBUGSTREAM, "inter_gen %ld marked %ld visited\n", num_examined, num_visited); fflush(DEBUGSTREAM);
     num_examined = 0;
 #endif
-
-    if (gc_overflow_flag) return;
 
     if (gctwa) {
 

@@ -34,10 +34,26 @@ NODE *eval_buttonact = NIL;
 NODE    *expresn = NIL,  /* the current expression */
 	*val    = NIL,  /* the value of the last expression */
 	*stack  = NIL,  /* register stack */
-	*numstack = NIL,/* stack whose elements aren't objects */
 	*parm   = NIL,  /* the current formal */
 	*catch_tag = NIL,
 	*arg    = NIL;  /* the current actual */
+
+#define MAX_NUMSTACK    16384
+FIXNUM  numstack[MAX_NUMSTACK]; /* stack whose elements aren't objects */
+int     numstack_depth = 0;
+FIXNUM  *numtop = &(numstack[0]);
+
+static void pushnum(FIXNUM obj) {
+    if (MAX_NUMSTACK == numstack_depth)
+        err_logo(STACK_OVERFLOW, NIL);
+    numstack[numstack_depth++] = obj;
+}
+
+static FIXNUM popnum(void) {
+    if (0 == numstack_depth)
+        err_logo(STACK_OVERFLOW, NIL);
+    return numstack[--numstack_depth];
+}
 
 NODE
 *var_stack	= NIL,	/* the stack of variables and their bindings */
@@ -141,12 +157,10 @@ NODE *restname, *restline;
 
 /* saving and restoring FIXNUMs rather than NODEs */
 
-#define numsave(register)   numpush(register,&numstack)
-#define numrestore(register) (register=(FIXNUM)car(numstack), numstack=cdr(numstack))
-
-#define num2save(reg1,reg2) (numpush(reg1,&numstack),numstack->n_obj=(NODE *)reg2)
-#define num2restore(reg1,reg2) (reg2=(FIXNUM)getobject(numstack), \
-				reg1=(FIXNUM)car(numstack), numstack=cdr(numstack))
+#define numsave(register)       pushnum(register)
+#define numrestore(register)    register = popnum()
+#define num2save(reg1,reg2)     (numsave(reg1),numsave(reg2))
+#define num2restore(reg1,reg2)  (reg2=popnum(),reg1=popnum())
 
 #if DEB_CONT
 #define newcont(tag)	debprint("Newcont = " #tag); \
@@ -681,8 +695,7 @@ fetch_cont:
         };
 #endif
 	enum labels x = (enum labels)cont;
-	cont = (FIXNUM)car(numstack);
-	numstack=cdr(numstack);
+        cont = popnum();
 #ifdef USE_GCC_DISPATCH
         if (x >= NUM_TOKENS)
             abort();
