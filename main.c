@@ -53,6 +53,10 @@ jmp_buf iblk_buf;
 #include <unistd.h>
 #endif
 
+#if defined(__APPLE__) || defined(__linux__)
+#include <sys/param.h>
+#endif
+
 #ifdef mac
 #include <console.h>
 #endif
@@ -224,6 +228,9 @@ int main(int argc, char *argv[]) {
     NODE *cl_tail = NIL;
     int argc2;
     char **argv2;
+#ifndef WIN32
+    char current_path[MAXPATHLEN + 1];
+#endif
 
 #ifdef SYMANTEC_C
     extern void (*openproc)(void);
@@ -316,6 +323,7 @@ int main(int argc, char *argv[]) {
     silent_load(Startuplg, logolib);
 #ifndef WIN32
     silent_load(Startuplg, getenv("HOME")); /* load startup.lg */
+    silent_load(Startuplg, getcwd(current_path, MAXPATHLEN));
 #else
     silent_load(Startuplg, NULL); /* load startup.lg */
 #endif
