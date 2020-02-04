@@ -719,4 +719,6 @@ extern NODE *varInThisObject(NODE *, BOOLEAN);
 extern NODE *procValue(NODE *);
 extern NODE *parent_list(NODE *);
 
+extern void dbUsual(const char*);
+
 #endif
