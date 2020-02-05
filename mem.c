@@ -1145,6 +1145,6 @@ void mem_stat(void) {
 NODE *checkmem(NODE *nd) {
     if (NIL == nd) return nd;
     if (!check_pointer(nd)) return nd;
-    assert(NODETYPE(nd) != NTFREE);
+    assert(nodetype_unsafe(nd) != NTFREE);
     return nd;
 }
