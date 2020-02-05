@@ -133,7 +133,7 @@ typedef enum {wrapmode, fencemode, windowmode} mode_type;
 #define SEG_SIZE_512K   16383
 #define SEG_SIZE_1M     32767
 #define SEG_SIZE_16M    524287
-#define SEG_SIZE        SEG_SIZE_1M
+#define SEG_SIZE        SEG_SIZE_16M
 
 #endif
 #endif
