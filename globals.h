@@ -279,6 +279,7 @@ extern NODE *lpause(NODE *);
 extern NODE *lcontinue(NODE *);
 
 /* eval.c */
+extern void eval_init(void);
 extern NODE *var_stack;
 extern NODE *output_node, *output_unode, *last_call;
 extern CTRLTYPE stopping_flag;

@@ -252,6 +252,7 @@ int main(int argc, char *argv[]) {
 #endif
     mem_init();
     term_init();
+    eval_init();
     init();
 
     math_init();

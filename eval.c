@@ -38,14 +38,28 @@ NODE    *expresn = NIL,  /* the current expression */
 	*catch_tag = NIL,
 	*arg    = NIL;  /* the current actual */
 
-#define MAX_NUMSTACK    16384
-FIXNUM  numstack[MAX_NUMSTACK]; /* stack whose elements aren't objects */
+#define MAX_NUMSTACK    (1024 * 1024)
+int max_numstack = 0;
+FIXNUM  *numstack;      /* stack whose elements aren't objects */
 int     numstack_depth = 0;
-FIXNUM  *numtop = &(numstack[0]);
+
+void eval_init(void) {
+    max_numstack = 16384;
+    numstack = (FIXNUM *)malloc(max_numstack * sizeof(FIXNUM));
+}
 
 static void pushnum(FIXNUM obj) {
-    if (MAX_NUMSTACK == numstack_depth)
-        err_logo(STACK_OVERFLOW, NIL);
+    if (max_numstack == numstack_depth) {
+        max_numstack <<= 1;
+        if (MAX_NUMSTACK < max_numstack)
+            err_logo(STACK_OVERFLOW, NIL);
+        numstack = realloc(numstack, max_numstack * sizeof(FIXNUM));
+        if (numstack == NULL)
+            err_logo(OUT_OF_MEM_UNREC, NIL);
+        else
+            fprintf(stderr,"STACK expanded: %d -> %d !\n",
+                        max_numstack >> 1, max_numstack);
+    }
     numstack[numstack_depth++] = obj;
 }
 
