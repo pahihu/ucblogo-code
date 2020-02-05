@@ -180,7 +180,7 @@ typedef unsigned char NODETYPES;
 #define COLON		((NODETYPES)0021)
 #define INT		((NODETYPES)0024)
 #define FLOATT		((NODETYPES)0025)
-#define CASEOBJ		((NODETYPES)0030)
+#define CASEOBJ		((NODETYPES)0031)
 #define STRING		((NODETYPES)0034)
 #define BACKSLASH_STRING ((NODETYPES)0036)
 #define VBAR_STRING	((NODETYPES)0037)
@@ -354,16 +354,32 @@ typedef struct logo_node {
 
 #define settype(node, type)     ((node)->node_type = (type))
 
+#ifdef MEM_DEBUG
+#define CHKMEM(nd)              checkmem(nd)
+#define nodetype(nd)            nodetype_safe(nd)
+#else
+#define CHKMEM(nd)              nd
+#define nodetype(nd)            (NIL == (nd) ? PNIL : (nd)->node_type)
+#endif
+
 #define n_car                   nunion.ncons.ncar
 #define n_cdr                   nunion.ncons.ncdr
 #define n_obj                   nunion.ncons.nobj
-#define getobject(node)         ((node)->n_obj)
-#define car(node)               ((node)->n_car)
-#define cdr(node)               ((node)->n_cdr)
+#define getobject(node)         CHKMEM((node)->n_obj)
+#define car(node)               CHKMEM((node)->n_car)
+#define cdr(node)               CHKMEM((node)->n_cdr)
+
+#ifdef MEM_DEBUG
 #define caar(node)              ((node)->n_car->n_car)
 #define cadr(node)              ((node)->n_cdr->n_car)
 #define cdar(node)              ((node)->n_car->n_cdr)
 #define cddr(node)              ((node)->n_cdr->n_cdr)
+#else
+#define caar(node)              car(car(node))
+#define cadr(node)              car(cdr(node))
+#define cdar(node)              cdr(car(node))
+#define cddr(node)              cdr(cdr(node))
+#endif
 
 #define n_str                   nunion.nstring.nstring_ptr
 #define n_len                   nunion.nstring.nstring_len
@@ -416,20 +432,20 @@ typedef struct logo_node {
 #define n_vars                    nunion.nobject.nvars          
 #define n_procs                   nunion.nobject.nprocs         
 #define n_parents                 nunion.nobject.nparents       
-#define getvars(node)             ((node)->n_vars)              
-#define getprocs(node)            ((node)->n_procs)             
-#define getparents(node)          ((node)->n_parents)           
-#define setvars(node, vars)       ((node)->n_vars = (vars))       
-#define setprocs(node, procs)     ((node)->n_procs = (procs))     
-#define setparents(node, parents) ((node)->n_parents = (parents)) 
+#define getvars(node)             CHKMEM((node)->n_vars)
+#define getprocs(node)            CHKMEM((node)->n_procs)
+#define getparents(node)          CHKMEM((node)->n_parents)
+#define setvars(node, vars)       (setcar(node,vars))
+#define setprocs(node, procs)     (setcdr(node,procs))
+#define setparents(node, parents) (setobject(node,parents))
 
 #define getsymbol(frame)          car(frame)
 #define getvalue(frame)           cadr(frame)
 
 #define n_parent		nunion.nmethod.nparent
 #define n_procname		nunion.nmethod.nprocname
-#define getparent(node)		((node)->n_parent)
-#define getprocname(node)	((node)->n_procname)
+#define getparent(node)         CHKMEM((node)->n_parent)
+#define getprocname(node)	CHKMEM((node)->n_procname)
 #endif	/* OBJECTS */
 
 #ifdef ecma
@@ -650,15 +666,15 @@ struct registers {
     NODE *r_current_unode;	/* a pair to identify this proc call */
     NODE *r_didnt_output_name;  /* name of the proc that didn't OP */
     NODE *r_didnt_get_output;	/* procedure wanting output from EVAL */
+#ifdef OBJECTS
+    NODE *r_usual_parent;   /* current_object or parent list */
+    NODE *r_usual_caller;   /* the object who calls a USUAL proc */
+#endif
     FIXNUM r_val_status;    /* tells what EVAL_SEQUENCE should do: */
     FIXNUM r_tailcall;	    /* 0 in sequence, 1 for tail, -1 for arg */
     FIXNUM r_repcount;	    /* count for repeat */
     FIXNUM r_user_repcount;
     FIXNUM r_ift_iff_flag;
-#ifdef OBJECTS
-    NODE *r_usual_parent;
-    NODE *r_usual_caller;
-#endif
 
 };
 

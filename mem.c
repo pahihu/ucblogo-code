@@ -124,10 +124,12 @@ static BOOLEAN check_pointer (volatile NODE *ptr_val);
 
 #if defined(__LP64__)
 
+#ifdef MEM_DEBUG
+
 static ZPTRTYPE zipPTR(NODE *ptr) {
     int segment_base;
     ZPTRTYPE ret;
-#ifndef NDEBUG
+#ifdef MEM_DEBUG
     struct segment *segment;
 #endif
 
@@ -136,7 +138,7 @@ static ZPTRTYPE zipPTR(NODE *ptr) {
     segment_base = ptr->segment_base;
     assert(segment_base < num_segment_bases);
     ret = (ptr - segment_bases[segment_base]);
-#ifndef NDEBUG
+#ifdef MEM_DEBUG
     segment = (struct segment *)(segment_bases[segment_base] - 1);
     assert(ret < segment->u.header.size);
 #endif
@@ -147,7 +149,7 @@ static ZPTRTYPE zipPTR(NODE *ptr) {
 static NODE *unzipPTR(ZPTRTYPE ptr) {
     NODE *ret;
     int segment_base;
-#ifndef NDEBUG
+#ifdef MEM_DEBUG
     struct segment *segment;
 #endif
 
@@ -156,7 +158,7 @@ static NODE *unzipPTR(ZPTRTYPE ptr) {
     assert(segment_base < num_segment_bases);
     ret = segment_bases[segment_base];
     assert(segment_base == ret->segment_base);
-#ifndef NDEBUG
+#ifdef MEM_DEBUG
     segment = (struct segment *)(segment_bases[segment_base] - 1);
     assert((ptr >> 8) < segment->u.header.size);
 #endif
@@ -164,6 +166,13 @@ static NODE *unzipPTR(ZPTRTYPE ptr) {
     assert(check_pointer(ret));
     return ret;
 }
+
+#else
+
+#define zipPTR(p)       ((p)?(((p)-segment_bases[(p)->segment_base])<<8)+(p)->segment_base:0)
+#define unzipPTR(x)     ((x)?segment_bases[(NUM_SEGMENTS-1)&(x)]+((x)>>8):0)
+
+#endif
 
 #else
 
@@ -346,10 +355,12 @@ static BOOLEAN valid_pointer (volatile NODE *ptr_val) {
 /* #pragma optimize("",on) */
 #endif
 
-NODETYPES nodetype(NODE *nd) {
+NODETYPES nodetype_safe(NODE *nd) {
     if (nd == NIL) return (PNIL);
-    return(nd->node_type);
+    return(CHKMEM(nd)->node_type);
 }
+
+#define nodetype_unsafe(nd)    (NIL == nd ? PNIL : nd->node_type)
 
 static void check_oldyoung(NODE *old, NODE *new) {
     if (VALID_PTR(new) && (new->gc.my_gen < old->gc.my_gen) &&
@@ -379,7 +390,7 @@ static void clean_oldyoungs(void) {
     for (current = oldyoung_list; current; current = current->next) {
         for (i = 0; i < current->num_nodes; ) {
             ptr = current->nodes[i];
-            if (NTFREE == nodetype(ptr)) {
+            if (NTFREE == nodetype_unsafe(ptr)) {
 #ifdef GC_DEBUG
                 num_cleaned++;
 #endif
@@ -404,17 +415,17 @@ static void clean_oldyoungs(void) {
  * a node.  Otherwise just directly assign to the field (e.g. for CONTs). */
 
 void setobject(NODE *nd, NODE *newobj) {
-    nd->n_obj = newobj;
+    nd->n_obj = CHKMEM(newobj);
     check_valid_oldyoung(nd, newobj);
 }
 
 void setcar(NODE *nd, NODE *newcar) {
-    nd->n_car = newcar;
+    nd->n_car = CHKMEM(newcar);
     check_valid_oldyoung(nd, newcar);
 }
 
 void setcdr(NODE *nd, NODE *newcdr) {
-    nd->n_cdr = newcdr;
+    nd->n_cdr = CHKMEM(newcdr);
     check_valid_oldyoung(nd, newcdr);
 }
 
@@ -459,7 +470,6 @@ NODE *newnode_unsafe(NODETYPES type) {
     if (newnd != NIL) {
 	free_list = newnd->nunion.next_free;
 
-        // *((__UINT64_TYPE__ *)newnd) = 0;
 	newnd->gc.my_gen = 0;
 	newnd->mark_gc = 0;
 	newnd->gc.oldyoung = 0;
@@ -744,7 +754,7 @@ re_mark:
     /* Check globals for NODE pointers */
 
     mark(current_line);
-    mark(command_line);    //
+    mark(command_line);
     mark(deepend_proc_name);
 
     mark(Listvalue);
@@ -1003,6 +1013,18 @@ re_mark:
 			break;
 		}
 		settype (nd, NTFREE);
+#if defined(MEM_DEBUG)
+#if defined(__LP64__)
+                nd->n_car = (NODE *)0xDEADBEEFDEADBEEF;
+                nd->n_cdr = (NODE *)0xDEADBEEFDEADBEEF;
+                nd->n_obj = (NODE *)0xDEADBEEFDEADBEEF;
+#else
+                nd->n_car = (NODE *)0xDEADBEEF;
+                nd->n_cdr = (NODE *)0xDEADBEEF;
+                nd->n_obj = (NODE *)0xDEADBEEF;
+#endif
+                nd->next_gen = (ZPTRTYPE)0xDEADBEEF;
+#endif
 	 	nd->nunion.next_free = free_list;
 	 	free_list = nd;
 	    }
@@ -1118,4 +1140,11 @@ void mem_stat(void) {
     fprintf(stderr,"#full GC = %d\n",num_gc_full);
 #endif
     return;
+}
+
+NODE *checkmem(NODE *nd) {
+    if (NIL == nd) return nd;
+    if (!check_pointer(nd)) return nd;
+    assert(NODETYPE(nd) != NTFREE);
+    return nd;
 }
