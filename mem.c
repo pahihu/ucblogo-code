@@ -78,7 +78,12 @@ FIXNUM seg_size = SEG_SIZE;
 
 /* A new segment of nodes is added if fewer than freed_threshold nodes are
    freed in one GC run */
+
+#ifdef TUNE_16M
+#define freed_threshold 13106
+#else
 #define freed_threshold ((long int)(seg_size * 0.4))
+#endif
 
 #define NUM_SEGMENTS    256
 NODE *free_list = NIL;                  /* global ptr to free node list */
@@ -456,12 +461,21 @@ static void do_gc(BOOLEAN full) {
     }
 }
 
+int num_allocs = 32768;
+
 NODE *newnode_unsafe(NODETYPES type) {
     register NODE *newnd;
     static NODE phony;
 
 #ifdef MEM_STATS
     num_newnode++;
+#endif
+
+#ifdef TUNE_16M
+    if (--num_allocs == 0) {
+        do_gc(FALSE);
+        num_allocs = 32768;
+    }
 #endif
 
     while ((newnd = free_list) == NIL && NOT_THROWING) {
