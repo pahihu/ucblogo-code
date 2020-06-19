@@ -30,6 +30,7 @@ extern "C" NODE *lload(NODE *);
 extern "C" NODE *lsave(NODE *);
 extern int logo_stop_flag;
 extern "C" int stop_quietly_flag;
+extern "C" char *strnzcpy(char *, char *, int);
 
 // ----------------------------------------------------------------------------
 // Globals
@@ -204,29 +205,24 @@ extern "C" void getExecutableDir(char * path, int maxlen) {
 
 void doLoad(char * name, int length) {
   int i = 0;
-  while (i < length && i < NAME_BUFFER_SIZE) {
-    nameBuffer[i] = name[i];
-    i++;
-  }
-  nameBufferSize = (length >= NAME_BUFFER_SIZE? NAME_BUFFER_SIZE : length);
+  nameBufferSize = length < NAME_BUFFER_SIZE? length : NAME_BUFFER_SIZE - 1;
+  strnzcpy(nameBuffer, name, nameBufferSize);
 
-    (void)lload(cons(make_static_strnode(name),NIL));
-    stop_quietly_flag = 1;
-    logo_stop_flag = 1;
+  (void)lload(cons(make_static_strnode(nameBuffer),NIL));
+  stop_quietly_flag = 1;
+  logo_stop_flag = 1;
 }
 
 void doSave(char * name, int length) {
   int i = 0;
-  while (i < length && i < NAME_BUFFER_SIZE) {
-    nameBuffer[i] = name[i];
-    i++;
-  }
-  nameBufferSize = (length >= NAME_BUFFER_SIZE? NAME_BUFFER_SIZE : length);
-  
-    (void)lsave(cons(make_static_strnode(name),NIL));
-    stop_quietly_flag = 1;
-    logo_stop_flag = 1;
-  }
+  nameBufferSize = length < NAME_BUFFER_SIZE? length : NAME_BUFFER_SIZE - 1;
+  strnzcpy(nameBuffer, name, nameBufferSize);
+
+  // 200619 ziggit
+  (void)lsave(cons(make_static_strnode(nameBuffer),NIL));
+  stop_quietly_flag = 1;
+  logo_stop_flag = 1;
+}
 
 extern "C" const char* wxMacGetLibloc(){
 #ifdef __WXMAC__
