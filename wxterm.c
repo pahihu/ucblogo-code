@@ -252,6 +252,7 @@ NODE *lsetfont(NODE *arg) {
 
   if (NOT_THROWING) {
     wxSetFont(textbuf, wx_font_size);
+    strcpy(wx_font_face, textbuf);
   }
 
   return(UNBOUND);
