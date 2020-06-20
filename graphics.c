@@ -1471,10 +1471,12 @@ NODE *lfilled(NODE *args) {
     if (is_list(car(args))) {
 	val = make_intnode(FILLED_COLOR_OFFSET);
 	lsetpalette(cons(val,args));
-    } else
+        color = FILLED_COLOR_OFFSET;
+    } else {
 	val = pos_int_arg(args);
+        color = getint(val) % NUMCOLORS;
+    }
     done_drawing;
-    color = getint(val);
 
     old_refresh = refresh_p;
     refresh_p = 1;  /* have to save polygon to fill it */
